@@ -19,6 +19,8 @@ Alpha
 - Download this module through the green icon at the top right and extract the contents into the site/modules directory of your ProcessWire installation
 - Enter the ProcessWire admin backend, go to "Modules" -> "Refresh" and install ProcessLoolEditor (titled "LibreOffice Online Editor")
 - Copy the file "wopi-template.php" from the modules directory to site/templates, rename it there to "wopi.php" and make sure it is readable by the web server
+- Create a template named "wopi". It needs no additional fields
+- Create a page named "wopi" under /home and set it to "hidden"
 - Configure your webserver to use https encryption
 - Install Collabora CODE like documented [here](https://www.collaboraoffice.com/code/) in steps 1 to 5 (no need to do dabble with the NextCloud app. Take care to follow all the instructions, especially regarding the docker run syntax and webserver configuration, to the point
 - Edit a page with a file field in ProcessWire and upload an office document. After saving, you will see an edit icon right of the filename. Click on it.
