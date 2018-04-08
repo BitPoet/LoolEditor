@@ -1,0 +1,317 @@
+<?php namespace ProcessWire;
+
+require(__DIR__ . "/WOPI.php");
+require(__DIR__ . "/Token.php");
+
+class LoolEditor extends WireData implements Module, ConfigurableModule {
+	
+	const defaultServer = "https://localhost";
+	
+	protected $tokenManager;
+	protected $wopi;
+	protected $discoveryTable;
+	
+	public static function getModuleInfo() {
+		return array(
+			"title"			=>	"Endpoint for LibreOffice Online Editor",
+			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE. Will be installed when you install ProcessLoolEditor.",
+			"version"		=>	"0.0.6",
+			"author"		=>	"BitPoet",
+			"autoload"		=>	true,
+			"requires"		=>	"ProcessWire>=3.0",
+		);
+	}
+	
+	public function __construct() {
+		$this->tokenManager = new LoolToken();
+		$this->wopi = new LoolWopi();
+		$this->addHookAfter("InputfieldFile::renderItem", $this, "addInputfieldFileEditLink");
+		$this->log->message("Added hook addInputfieldFileEditLink for InputfieldFile::renderItem");
+	}
+	
+	public function addInputfieldFileEditLink(HookEvent $event) {
+		$inp = $event->object;
+		$pagefile = $event->arguments(0);
+		$id = $event->arguments(1);
+		$n = $event->arguments(2);
+		
+		if(! $this->hasFileMapping(strtolower(preg_replace('/^.*\./', '', $pagefile->name)))) return;
+		
+		$editPage = $this->pages->get($this->config->adminRootPageID)->child("name=lool, include=hidden");
+		$editUrl = $editPage->url . "?id=" . $pagefile->get("page")->id . "&field=" . $inp->name . "&filename=" . $pagefile->name;
+		
+		$html = "<a class='InputfieldFileLoolEditLink pw-modal pw-modal-full' href='$editUrl'> " .
+				"<span class='fa fa-pencil-square-o' title='" . $this->_("Edit file in Collabora CODE Editor") . "'> </span>" .
+				"</a>\n";
+		
+		$return = $event->return;
+		$return = preg_replace('~(InputfieldFileStats.*</span> )~', '$1' . $html, $return);
+		
+		$event->return = $return;
+	}
+	
+	private function hasFileMapping($ext) {
+		if(strpos($ext, ".") === 0) $ext = rtrim($ext, ".");
+		
+		try {
+			$this->buildDiscoveryTable();
+		} catch(Exception $e) {
+			// Do nothing
+		}
+		
+		if(is_array($this->discoveryTable) && array_key_exists($ext, $this->discoveryTable)) return true;
+		
+		return false;
+	}
+	
+	/**
+	 * This function handles all the communication with the CODE server
+	 */
+	public function handleRequest() {
+		$request = $this->wopi->parseRequest();
+		
+		if(isset($request["error"])) {
+			header("HTTP/1.1 400 " . $request["error"]);
+			exit;
+		}
+		
+		if($request["action"] == "NotImplemented") {
+			header("HTTP/1.1 501 Not Implmemented");
+			exit;
+		}
+		
+		switch($request["action"]) {
+			case "GetFile":
+				$this->getFile($request);
+				break;
+			case "PutFile":
+				$this->putFile($request);
+				break;
+			case "CheckFileInfo":
+				$this->checkFileInfo($request);
+				break;
+		}
+	}
+	
+	
+	private function getFile($request) {
+		$fid = $request["fileid"];
+		$token = $this->input->get("access_token");
+
+		if(! $token) $this->jsonResponse(array(), 401, "Unauthorized");
+
+		$filedata = $this->tokenManager->getFileDataForToken($token);
+
+		if($filedata["fileid"] != $fid) $this->jsonResponse(array(), 401, "Unauthorized");
+
+		$page = $this->pages->get($filedata["pages_id"]);
+		$field = $this->fields->get($filedata["fieldname"]);
+		$user = $this->users->get($filedata["username"]);
+		
+		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
+		
+		$editable = $field->editable($page, $user);
+		
+		$path = $page->getUnformatted($filedata["fieldname"])->path();
+		$filename = $filedata["filename"];
+		
+		header("Content-Type: application/octet-stream");
+		header("Content-Disposition: attachment; filename=$filename");
+		readfile($path . $filename);
+		exit;
+	}
+	
+	private function putFile($request) {
+		$fid = $request["fileid"];
+		$token = $this->input->get("access_token");
+
+		if(! $token) $this->jsonResponse(array(), 401, "Unauthorized");
+
+		$filedata = $this->tokenManager->getFileDataForToken($token);
+
+		if($filedata["fileid"] != $fid) $this->jsonResponse(array(), 401, "Unauthorized");
+
+		$page = $this->pages->get($filedata["pages_id"]);
+		$field = $this->fields->get($filedata["fieldname"]);
+		$user = $this->users->get($filedata["username"]);
+		
+		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
+		
+		$editable = $field->editable($page, $user);
+		
+		if(! $editable) {
+			$this->jsonResponse(array(), 404, "Not allowed to edit file");
+		}
+		
+		$path = $page->getUnformatted($filedata["fieldname"])->path();
+		$filename = $filedata["filename"];
+		
+		$this->log->message("Writing new file $path$filename");
+		
+		$file = fopen($path . $filename, "w");
+		$inp  = fopen("php://input", "r");
+		while($block = fread($inp, 8192)) {
+			fputs($file, $block);
+		}
+		fclose($inp);
+		fclose($file);
+		
+		$this->jsonResponse(array());
+	}
+	
+	private function checkFileInfo($request) {
+		$fid = $request["fileid"];
+		$token = $this->input->get("access_token");
+
+		if(! $token) $this->jsonResponse(array(), 401, "Unauthorized");
+
+		$filedata = $this->tokenManager->getFileDataForToken($token);
+
+		if($filedata["fileid"] != $fid) $this->jsonResponse(array(), 401, "Unauthorized");
+
+		$page = $this->pages->get($filedata["pages_id"]);
+		$field = $this->fields->get($filedata["fieldname"]);
+		$user = $this->users->get($filedata["username"]);
+		
+		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
+		
+		$editable = $field->editable($page, $user);
+		
+		$path = $page->getUnformatted($filedata["fieldname"])->path();
+		$filename = $filedata["filename"];
+		
+		$ret = array(
+			"BaseFileName" => $filename,
+			"OwnerId" => $page->createdUser->name,
+			"Size" => filesize($path . $filename),
+			"UserId" => $user->name,
+			"Version" => "v" . filemtime($path. $filename),
+			"ReadOnly" => !$editable,
+			"UserCanWrite" => $editable
+		);
+		
+		$this->jsonResponse($ret);
+	}
+	
+	private function getDiscoveryXml() {
+		$discovery = $this->config->paths->cache . "discovery.json";
+		
+		if(! file_exists($discovery) || filemtime($discovery) < time() - 86400) {
+			// Fetch discovery.xml file and renew every 24 hours
+			$http = new WireHttp();
+			$url = $this->pages->get('/')->httpUrl . "hosting/discovery";
+			$xml = $http->get($url);
+			
+			if($xml === false) {
+				throw new WireException("Unable to fetch wopi discovery file from $url");
+			}
+			
+			$data = json_decode(json_encode(simplexml_load_string($xml)), true);
+			
+			$file = fopen($discovery, "w");
+			fputs($file, json_encode($data, \JSON_PRETTY_PRINT));
+			fclose($file);
+		} else {
+			$encoded = file_get_contents($discovery);
+			
+			$data = json_decode($encoded, true);
+		}
+		
+		return $data;
+	}
+	
+	
+	private function buildDiscoveryTable() {
+		$data = $this->getDiscoveryXml();
+		$urlMapping = array();
+		
+		foreach($data["net-zone"]["app"] as $item) {
+			$urlMapping[$item["action"]["@attributes"]["ext"]] = $item["action"]["@attributes"]["urlsrc"];
+		}
+		
+		$this->discoveryTable = $urlMapping;
+	}
+	
+	
+	public function getUrlSrc($extension) {
+		if(strpos($extension, ".") == 0) $extension = ltrim($extension, ".");
+		
+		$this->buildDiscoveryTable();
+		
+		return isset($this->discoveryTable[strtolower($extension)]) ? $this->discoveryTable[strtolower($extension)] : false;
+	}
+	
+	
+	public function ___renderEditor($page, $field, $filename, $user) {
+		
+		$token = $this->tokenManager->getFileToken($page->id, $field->name, $filename);
+		
+		if($token) {
+			$fileinfo = $this->tokenManager->getFileDataForToken($token);
+			
+			if($fileinfo["username"] != $user->name)
+				return $this->_("File is already locked by user " . $fileinfo["username"]);
+		} else {
+			$token = $this->tokenManager->createToken($page->id, $field->name, $filename, $user->name);
+		}
+		
+		$wopiPage = $this->pages->get("/wopi/");
+		$filedata = $this->tokenManager->getFileDataForToken($token);
+		
+		$extension = preg_replace('/^.*\./', '', $filename);
+		$urlsrc = $this->getUrlSrc($extension);
+		
+		$WOPISrc = $wopiPage->httpUrl . "files/" . $filedata["fileid"];
+		
+		$viewerUrl = $urlsrc . "WOPISrc=" . $WOPISrc;
+		
+		$moduleCSS = $this->config->urls->{$this->className()} . $this->className() . ".css";
+		$this->config->styles->add($moduleCSS . "?v=" . filemtime($this->config->paths->{$this->className()} . $this->className() . ".css"));
+		$moduleJS = $this->config->urls->{$this->className()} . $this->className() . ".js";
+		$this->config->scripts->add($moduleJS . "?v=" . filemtime($this->config->paths->{$this->className()} . $this->className() . ".js"));
+		
+		// "<div style='width: 80%; height: 800px;'>\n" .
+				
+		$out =	'<iframe id="loleafletframe_viewer" name= "loleafletframe_viewer" style="width:80%;height:auto;position:absolute;"></iframe>' . "\n" .
+				"<form id='loleafletform_viewer' name='loleafletform_viewer' target='loleafletframe_viewer' action='$viewerUrl' method='POST'>\n" .
+				'<input name="access_token" value="' . $token . '" type="hidden"/>' . "\n" .
+				'</form>' . "\n";
+		// .
+		//		"</div>\n"
+		
+		//$out .= "<!-- urlsrc = $urlsrc for extension $extension of filename $filename -->\n";
+		
+		return $out;
+	}
+	
+	private function jsonResponse($data, $code = 200, $statusText = "OK") {
+		header("HTTP/1.1 $code $statusText");
+		header("Content-Type: application/json");
+		echo json_encode($data);
+		exit;
+	}
+	
+	
+	public function install() {
+		$this->tokenManager->createTable();
+		$this->wopi->createLocksTable();
+	}	
+	
+	public function uninstall() {
+		$this->tokenManager->removeTable();
+		$this->wopi->removeLocksTable();
+	}	
+	
+	public static function getModuleConfigInputfields($data) {
+		$inputfields = new InputfieldWrapper();
+		
+		$f = wire("modules")->get("InputfieldText");
+		$f->label = "Collabora Online Server";
+		$f->attr("name", "collaboraServer");
+		$f->description = "URL and Port (if non-standard) of the Collabora Online Server that provides editing functionality as a WOPI client.";
+		$f->attr("value", isset($data["collaboraServer"]) ? $data["collaboraServer"] : self::defaultServer);
+		$inputfields->append($f);
+		
+		return $inputfields;
+	}
+}

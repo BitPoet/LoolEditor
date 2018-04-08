@@ -1,0 +1,61 @@
+<?php namespace ProcessWire;
+
+class ProcessLoolEditor extends Process implements Module {
+
+	protected $lool;
+
+	public static function getModuleInfo() {
+		return array(
+			"title"			=>	"LibreOffice Online Editor",
+			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE",
+			"version"		=>	"0.0.6",
+			"author"		=>	"BitPoet",
+			"installs"		=>	"LoolEditor",
+			"requires"		=>	"ProcessWire>=3.0",
+			"page"			=>	array(
+				"name"			=>	"lool",
+				"title"			=>	"LOOL Editor",
+				"status"		=>	"hidden"
+			)
+		);
+	}
+	
+	public function __construct() {
+		$this->lool = $this->modules->get("LoolEditor");
+	}
+	
+	public function init() {
+		if($this->page->process == "ProcessPageEdit") {
+			$this->config->scripts->add($this->config->urls->{$this->className()} . $this->className() . ".js");
+		}
+		parent::init();
+	}
+	
+	public function ___execute() {
+		$pageid = $this->input->get->id;
+		$fieldname = $this->sanitizer->fieldName($this->input->get->field);
+		$filename = $this->sanitizer->filename($this->input->get->filename);
+		
+		if(! $pageid || ! $fieldname || !$filename) {
+			return $this->_("Missing parameters for " . $this->className());
+		}
+		
+		$page = $this->pages->get((int)$pageid);
+		if(! $page) {
+			return $this->_("Illegal page id");
+		}
+		
+		$field = $this->fields->get($fieldname);
+		if(! $field) {
+			return $this->_("Unknown field $fieldname");
+		}
+		
+		$viewable = $field->viewable($page, $this->user);
+		if(! $viewable) {
+			return $this->_("You are not allowed to access field $fieldname on page {$page->url}");
+		}
+		
+		return $this->lool->renderEditor($page, $field, $filename, $this->user);
+	}
+	
+}
