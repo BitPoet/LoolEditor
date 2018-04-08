@@ -1,2 +1,35 @@
 # LoolEditor
 ProcessWire module - inline editing for office documents using Collabora CODE
+
+## About
+This module adds inline editing capabilities for office documents to the [ProcessWire OpenSource CMS](https://processwire.com). It uses the free [Collabora CODE](https://www.collaboraoffice.com/code/) server that is used in other projects like [OwnCloud](https://owncloud.org/) or [NextCloud](https://www.nextcloud.com/).
+
+## Module Status
+Alpha
+
+## Requirements
+- An Installation of ProcessWire CMS with Apache or NGINX on a docker-capable server
+- Docker runtime
+- HTTPS with a certificate trusted by the browser (e.g. from [LetsEncrypt](https://letsencrypt.org/))
+- A working installation of the Collabora CODE docker image
+- This module, apparently
+
+## Step by step
+- Install ProcessWire 3 as documented [here](https://processwire.com/docs/install/new/). If you are new to ProcessWire, you may want to select a site profile other than "blank"
+- Download this module through the green icon at the top right and extract the contents into the site/modules directory of your ProcessWire installation
+- Enter the ProcessWire admin backend, go to "Modules" -> "Refresh" and install ProcessLoolEditor (titled "LibreOffice Online Editor")
+- Go to "Modules" -> "Configure" -> "LoolEditor" and enter the absolute URL of your ProcessWire installation. This will be something like "https://your.server.name", though if you installed ProcessWire into a subdirectory, it will be "https://your.server.name/path/to/processwire". Make sure to include the port too if you told your webserver to listen a port different from 443
+- Copy the file "wopi.php" from the modules directory to site/templates and make sure it is readable by the web server
+- Configure your webserver to use https encryption
+- Install Collabora CODE like documented [here](https://www.collaboraoffice.com/code/) in steps 1 to 5 (no need to do dabble with the NextCloud app. Take care to follow all the instructions, especially regarding the docker run syntax and webserver configuration, to the point
+- Edit a page with a file field in ProcessWire and upload an office document. After saving, you will see an edit icon right of the filename. Click on it.
+- Your LibreOffice editor should open in a modal and you should be able to edit the file and save any changes
+
+## ToDo
+- Pass the correct locale to the CODE leaflet
+- Finish implementing file locking
+- Make the editor modal look nicer and fit the editor more tightly into the available space
+- Add a little more error handling and reporting
+
+## License
+This module is released under MPL 2.0. See the LICENSE file in this repository for details.
