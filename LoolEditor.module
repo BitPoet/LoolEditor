@@ -3,9 +3,7 @@
 require(__DIR__ . "/WOPI.php");
 require(__DIR__ . "/Token.php");
 
-class LoolEditor extends WireData implements Module, ConfigurableModule {
-	
-	const defaultServer = "https://localhost";
+class LoolEditor extends WireData implements Module {
 	
 	protected $tokenManager;
 	protected $wopi;
@@ -302,16 +300,4 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 		$this->wopi->removeLocksTable();
 	}	
 	
-	public static function getModuleConfigInputfields($data) {
-		$inputfields = new InputfieldWrapper();
-		
-		$f = wire("modules")->get("InputfieldText");
-		$f->label = "Collabora Online Server";
-		$f->attr("name", "collaboraServer");
-		$f->description = "URL and Port (if non-standard) of the Collabora Online Server that provides editing functionality as a WOPI client.";
-		$f->attr("value", isset($data["collaboraServer"]) ? $data["collaboraServer"] : self::defaultServer);
-		$inputfields->append($f);
-		
-		return $inputfields;
-	}
 }
