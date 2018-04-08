@@ -18,7 +18,6 @@ Alpha
 - Install ProcessWire 3 as documented [here](https://processwire.com/docs/install/new/). If you are new to ProcessWire, you may want to select a site profile other than "blank"
 - Download this module through the green icon at the top right and extract the contents into the site/modules directory of your ProcessWire installation
 - Enter the ProcessWire admin backend, go to "Modules" -> "Refresh" and install ProcessLoolEditor (titled "LibreOffice Online Editor")
-- Go to "Modules" -> "Configure" -> "LoolEditor" and enter the absolute URL of your ProcessWire installation. This will be something like "https://your.server.name", though if you installed ProcessWire into a subdirectory, it will be "https://your.server.name/path/to/processwire". Make sure to include the port too if you told your webserver to listen a port different from 443
 - Copy the file "wopi.php" from the modules directory to site/templates and make sure it is readable by the web server
 - Configure your webserver to use https encryption
 - Install Collabora CODE like documented [here](https://www.collaboraoffice.com/code/) in steps 1 to 5 (no need to do dabble with the NextCloud app. Take care to follow all the instructions, especially regarding the docker run syntax and webserver configuration, to the point
@@ -30,6 +29,12 @@ Alpha
 - Finish implementing file locking
 - Make the editor modal look nicer and fit the editor more tightly into the available space
 - Add a little more error handling and reporting
+- Allow more customization
+- Make editor use configurable on a per-field basis
+- 
+
+## Screencap
+![Screen capture of LoolEditor](https://raw.githubusercontent.com/BitPoet/bitpoet.github.io/master/img/LoolEditor1.gif)
 
 ## License
 This module is released under MPL 2.0. See the LICENSE file in this repository for details.
