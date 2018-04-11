@@ -1,5 +1,17 @@
 <?php namespace ProcessWire;
 
+
+/**
+ * Process module that provides the container for the LibreOffice Online
+ * editor leaflet.
+ *
+ * All the lifting is done inside LoolEditor.module and its included classes.
+ *
+ * This is a module for the free ProcessWire CMS (https://processwire.com)
+ *
+ * Module code by BitPoet
+ * Licensed under MPL 2.0
+ */
 class ProcessLoolEditor extends Process implements Module {
 
 	protected $lool;
@@ -8,7 +20,7 @@ class ProcessLoolEditor extends Process implements Module {
 		return array(
 			"title"			=>	"LibreOffice Online Editor",
 			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE",
-			"version"		=>	"0.0.6",
+			"version"		=>	"0.0.8",
 			"author"		=>	"BitPoet",
 			"installs"		=>	"LoolEditor",
 			"requires"		=>	"ProcessWire>=3.0",

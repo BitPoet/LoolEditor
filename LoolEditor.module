@@ -3,6 +3,18 @@
 require(__DIR__ . "/WOPI.php");
 require(__DIR__ . "/Token.php");
 
+/**
+ * Edit office documents directly inside ProcessWire.
+ *
+ * Needs Collabora CODE installed and configured
+ * (see README.md for details).
+ *
+ * This is a module for the free ProcessWire CMS (https://processwire.com)
+ *
+ * Module code by BitPoet
+ * Licensed under MPL 2.0
+ */
+
 class LoolEditor extends WireData implements Module {
 	
 	protected $tokenManager;
@@ -13,7 +25,7 @@ class LoolEditor extends WireData implements Module {
 		return array(
 			"title"			=>	"Endpoint for LibreOffice Online Editor",
 			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE. Will be installed when you install ProcessLoolEditor.",
-			"version"		=>	"0.0.6",
+			"version"		=>	"0.0.8",
 			"author"		=>	"BitPoet",
 			"autoload"		=>	true,
 			"requires"		=>	"ProcessWire>=3.0",
@@ -24,21 +36,36 @@ class LoolEditor extends WireData implements Module {
 		$this->tokenManager = new LoolToken();
 		$this->wopi = new LoolWopi();
 		$this->addHookAfter("InputfieldFile::renderItem", $this, "addInputfieldFileEditLink");
-		$this->log->message("Added hook addInputfieldFileEditLink for InputfieldFile::renderItem");
+		$this->addHookAfter("FieldtypeFile::getConfigAllowContext", $this, "getConfigAllowContext");
+		$this->addHookAfter("FieldtypeFile::getConfigInputfields", $this, "getConfigInputfields");
 	}
 	
+	
+	/**
+	 * Add the file edit link to the image input field if the file type
+	 * is supported by LibreOffice Online.
+	 *
+	 * Executed after InputfieldFile::renderItem
+	 */
 	public function addInputfieldFileEditLink(HookEvent $event) {
 		$inp = $event->object;
 		$pagefile = $event->arguments(0);
 		$id = $event->arguments(1);
 		$n = $event->arguments(2);
 		
+		$ownerPage = $pagefile->get("page");
+		$field = $pagefile->get("field");
+		$fieldContext = $ownerPage->template->fieldgroup->getField($field->name, true);
+		
+		// Only show editor when enabled for this field
+		if(! $fieldContext->enableLool) return;
+		
 		if(! $this->hasFileMapping(strtolower(preg_replace('/^.*\./', '', $pagefile->name)))) return;
 		
 		$editPage = $this->pages->get($this->config->adminRootPageID)->child("name=lool, include=hidden");
-		$editUrl = $editPage->url . "?id=" . $pagefile->get("page")->id . "&field=" . $inp->name . "&filename=" . $pagefile->name;
+		$editUrl = $editPage->url . "?id=" . $ownerPage->id . "&field=" . $inp->name . "&filename=" . $pagefile->name;
 		
-		$html = "<a class='InputfieldFileLoolEditLink pw-modal pw-modal-full' href='$editUrl'> " .
+		$html = "<a class='InputfieldFileLoolEditLink pw-modal pw-modal-large' href='$editUrl' title='" . sprintf(_("Edit file %s%s"), $ownerPage->url, $pagefile->name) . "'> " .
 				"<span class='fa fa-pencil-square-o' title='" . $this->_("Edit file in Collabora CODE Editor") . "'> </span>" .
 				"</a>\n";
 		
@@ -48,6 +75,10 @@ class LoolEditor extends WireData implements Module {
 		$event->return = $return;
 	}
 	
+	/**
+	 * Check if a urlsrc for this file extension is defined in discovery.xml,
+	 * meaning that the file is supported by LibreOffce Online
+	 */
 	private function hasFileMapping($ext) {
 		if(strpos($ext, ".") === 0) $ext = rtrim($ext, ".");
 		
@@ -88,24 +119,157 @@ class LoolEditor extends WireData implements Module {
 			case "CheckFileInfo":
 				$this->checkFileInfo($request);
 				break;
+			case "Lock":
+				$this->tryLock($request);
+				break;
+			case "Unlock":
+				$this->unLock($request);
+				break;
+			case "UnlockAndRelock":
+				$this->unLockAndRelock($request);
+				break;
+			case "RefreshLock":
+				$this->tryRefreshLock($request);
+				break;
 		}
 	}
 	
 	
-	private function getFile($request) {
+	/**
+	 * Helper function that checks access permissions and returns
+	 * the lock information in an associative array.
+	 */
+	private function checkLock($request) {
 		$fid = $request["fileid"];
-		$token = $this->input->get("access_token");
+		
+		$filedata = $this->getFileDataIfAuthorized($fid);
 
+		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
+
+		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
+		
+		$editable = $field->editable($page, $user);
+		
+		if(! $editable) {
+			$this->jsonResponse(array(), 404, "Not allowed to edit file");
+		}
+
+		$lock = $this->wopi->getLock($fid);
+
+		return $lock;		
+	}
+	
+	
+	/**
+	 * Tries to lock the given file id
+	 */
+	private function tryLock($request) {
+		$fid = $request["fileid"];
+		
+		$lock = $this->checkLock($fid);
+		
+		if($lock) {
+			if($lock["lock_user_id"] == $user->id && $lock["lock"] == $request["lock"]) {
+				$this->wopi->updateLock($fid);
+			} else {
+				header("X-WOPI-Lock", "{$lock['id']}");
+				$this->jsonResponse(array(), 409, "Conflict");
+			}
+		} else {
+			$this->wopi->lock($fid, $user);
+		}
+		
+		$this->jsonResponse(array());
+	}
+	
+	
+	/**
+	 * Unlocks the given file id, i.e. deletes the lock entry in the db.
+	 *
+	 * if $quitAfterSuccess is set to false, the function silently returns
+	 * on success. This is needed to allow calling it from unLockAndRelock.
+	 */
+	private function unLock($request, $quitAfterSuccess = true) {
+		$fid = $request["fileid"];
+		
+		$lock = $this->checkLock($fid);
+		
+		if(! $lock || $lock["lock_user_id"] != $user->id || $lock["lock"] != $request["lock"]) {
+			header("X-WOPI-Lock", "{$lock['id']}");
+			$this->jsonResponse(array(), 409, "Conflict");
+		}
+		
+		$this->wopi->unLock($fid);
+		
+		if($quitAfterSuccess) $this->jsonResponse(array());
+	}
+	
+	/**
+	 * Removes an old lock (if present) and returns a new one.
+	 */
+	private function unLockAndRelock($request) {
+		$fid = $request["fileid"];
+
+		$this->unLock($request, false);
+		$this->tryLock($request);
+	}
+	
+	private function tryRefreshLock($request) {
+		$fid = $request["fileid"];
+		
+		$lock = $this->checkLock($fid);
+		
+		if(! $lock || $lock["lock_user_id"] != $user->id || $lock["lock"] != $request["lock"]) {
+			header("X-WOPI-Lock", "{$lock['id']}");
+			$this->jsonResponse(array(), 409, "Conflict");
+		}
+		
+		$this->wopi->updateLock($fid);
+		
+		$this->jsonResponse(array());
+	}
+	
+	/**
+	 * Return stored data (token, user, etc.) for given fileid
+	 * if the token given as GET parameter matches, otherwise
+	 * output an error and terminate the script.
+	 */
+	private function getFileDataIfAuthorized($fileid) {
+		$token = $this->input->get("access_token");
+		
 		if(! $token) $this->jsonResponse(array(), 401, "Unauthorized");
 
 		$filedata = $this->tokenManager->getFileDataForToken($token);
 
-		if($filedata["fileid"] != $fid) $this->jsonResponse(array(), 401, "Unauthorized");
+		if($filedata["fileid"] != $fileid) $this->jsonResponse(array(), 401, "Unauthorized");
 
+		return $filedata;
+	}
+	
+	/**
+	 * Retrieve the associated objects (page, field, user)
+	 * for the ids/names stored in the db.
+	 */
+	private function getFileAssociatedObjects($filedata) {
 		$page = $this->pages->get($filedata["pages_id"]);
 		$field = $this->fields->get($filedata["fieldname"]);
 		$user = $this->users->get($filedata["username"]);
+
+		return array($page, $field, $user);		
+	}
+	
+	
+	/**
+	 * Retrieve the file after applying PW's access checks
+	 * and output it to the WOPI client.
+	 */
+	private function getFile($request) {
+		$fid = $request["fileid"];
 		
+		$filedata = $this->getFileDataIfAuthorized($fid);
+
+		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
+
 		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
 		
 		$editable = $field->editable($page, $user);
@@ -119,20 +283,19 @@ class LoolEditor extends WireData implements Module {
 		exit;
 	}
 	
+	
+	/**
+	 * Store the file POSTed to us if permission checks
+	 * allow it. Overwrites the original file in
+	 * site/assets/files/$pageid/.
+	 */
 	private function putFile($request) {
 		$fid = $request["fileid"];
-		$token = $this->input->get("access_token");
-
-		if(! $token) $this->jsonResponse(array(), 401, "Unauthorized");
-
-		$filedata = $this->tokenManager->getFileDataForToken($token);
-
-		if($filedata["fileid"] != $fid) $this->jsonResponse(array(), 401, "Unauthorized");
-
-		$page = $this->pages->get($filedata["pages_id"]);
-		$field = $this->fields->get($filedata["fieldname"]);
-		$user = $this->users->get($filedata["username"]);
 		
+		$filedata = $this->getFileDataIfAuthorized($fid);
+
+		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
+
 		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
 		
 		$editable = $field->editable($page, $user);
@@ -143,9 +306,8 @@ class LoolEditor extends WireData implements Module {
 		
 		$path = $page->getUnformatted($filedata["fieldname"])->path();
 		$filename = $filedata["filename"];
-		
-		$this->log->message("Writing new file $path$filename");
-		
+
+		// Read file data from raw POST body and overwrite the original file with it		
 		$file = fopen($path . $filename, "w");
 		$inp  = fopen("php://input", "r");
 		while($block = fread($inp, 8192)) {
@@ -157,20 +319,22 @@ class LoolEditor extends WireData implements Module {
 		$this->jsonResponse(array());
 	}
 	
+	
+	/**
+	 * Retrieve basic file information after performing
+	 * access checks and return the necessary information
+	 * to the WOPI client.
+	 *
+	 * This method also lets the WOPI client know whether
+	 * the file can be edited.
+	 */
 	private function checkFileInfo($request) {
 		$fid = $request["fileid"];
-		$token = $this->input->get("access_token");
-
-		if(! $token) $this->jsonResponse(array(), 401, "Unauthorized");
-
-		$filedata = $this->tokenManager->getFileDataForToken($token);
-
-		if($filedata["fileid"] != $fid) $this->jsonResponse(array(), 401, "Unauthorized");
-
-		$page = $this->pages->get($filedata["pages_id"]);
-		$field = $this->fields->get($filedata["fieldname"]);
-		$user = $this->users->get($filedata["username"]);
 		
+		$filedata = $this->getFileDataIfAuthorized($fid);
+
+		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
+
 		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
 		
 		$editable = $field->editable($page, $user);
@@ -185,12 +349,26 @@ class LoolEditor extends WireData implements Module {
 			"UserId" => $user->name,
 			"Version" => "v" . filemtime($path. $filename),
 			"ReadOnly" => !$editable,
-			"UserCanWrite" => $editable
+			"UserCanWrite" => $editable,
+			"UserCanNotWriteRelative" => true,
+			"SupportsLocks" => true,
+			"UserFriendlyName" => $user->name,
+			"UserExtraInfo" => array(),
+			"LastModifiedTime" => date("c", filemtime($path . $filename)),
+			"CloseButtonClosesWindow" => true
 		);
 		
 		$this->jsonResponse($ret);
 	}
 	
+	
+	/**
+	 * Retrieve discovery.xml from the WOPI client or load the cached
+	 * resource in site/assets/cache/discovery.json.
+	 *
+	 * This file defines which file extensions / mime types can be
+	 * displayed and edited.
+	 */
 	private function getDiscoveryXml() {
 		$discovery = $this->config->paths->cache . "discovery.json";
 		
@@ -219,6 +397,11 @@ class LoolEditor extends WireData implements Module {
 	}
 	
 	
+	/**
+	 * Transform discovery data from the WOPI client into a
+	 * more easily usable key->value table in a property of
+	 * this class
+	 */
 	private function buildDiscoveryTable() {
 		$data = $this->getDiscoveryXml();
 		$urlMapping = array();
@@ -231,6 +414,9 @@ class LoolEditor extends WireData implements Module {
 	}
 	
 	
+	/**
+	 * Retrieve the urlsrc for a given extension from our lookup table
+	 */
 	public function getUrlSrc($extension) {
 		if(strpos($extension, ".") == 0) $extension = ltrim($extension, ".");
 		
@@ -240,6 +426,10 @@ class LoolEditor extends WireData implements Module {
 	}
 	
 	
+	/**
+	 * Render the editor iframe and the form with the necessary information that
+	 * will be posted on page load by ProcessLoolEditor.js
+	 */
 	public function ___renderEditor($page, $field, $filename, $user) {
 		
 		$token = $this->tokenManager->getFileToken($page->id, $field->name, $filename);
@@ -247,8 +437,8 @@ class LoolEditor extends WireData implements Module {
 		if($token) {
 			$fileinfo = $this->tokenManager->getFileDataForToken($token);
 			
-			if($fileinfo["username"] != $user->name)
-				return $this->_("File is already locked by user " . $fileinfo["username"]);
+			//if($fileinfo["username"] != $user->name)
+			//	return $this->_("File is already locked by user " . $fileinfo["username"]);
 		} else {
 			$token = $this->tokenManager->createToken($page->id, $field->name, $filename, $user->name);
 		}
@@ -261,27 +451,31 @@ class LoolEditor extends WireData implements Module {
 		
 		$WOPISrc = $wopiPage->httpUrl . "files/" . $filedata["fileid"];
 		
-		$viewerUrl = $urlsrc . "WOPISrc=" . $WOPISrc;
+		$viewerUrl = $urlsrc .
+					"WOPISrc=" . $WOPISrc .
+					"&closebutton=1" .
+					"&title=" . urlencode($filename) .
+					"&lang=de" .
+					"&revisionhistory=1";
 		
 		$moduleCSS = $this->config->urls->{$this->className()} . $this->className() . ".css";
 		$this->config->styles->add($moduleCSS . "?v=" . filemtime($this->config->paths->{$this->className()} . $this->className() . ".css"));
 		$moduleJS = $this->config->urls->{$this->className()} . $this->className() . ".js";
 		$this->config->scripts->add($moduleJS . "?v=" . filemtime($this->config->paths->{$this->className()} . $this->className() . ".js"));
 		
-		// "<div style='width: 80%; height: 800px;'>\n" .
-				
-		$out =	'<iframe id="loleafletframe_viewer" name= "loleafletframe_viewer" style="width:80%;height:auto;position:absolute;"></iframe>' . "\n" .
+		$out =	'<iframe id="loleafletframe_viewer" name= "loleafletframe_viewer" style="width:100%;left:0;height:auto;position:absolute;"></iframe>' . "\n" .
 				"<form id='loleafletform_viewer' name='loleafletform_viewer' target='loleafletframe_viewer' action='$viewerUrl' method='POST'>\n" .
 				'<input name="access_token" value="' . $token . '" type="hidden"/>' . "\n" .
 				'</form>' . "\n";
-		// .
-		//		"</div>\n"
-		
-		//$out .= "<!-- urlsrc = $urlsrc for extension $extension of filename $filename -->\n";
 		
 		return $out;
 	}
 	
+	
+	/**
+	 * Outputs the given body with optional HTTP status code and text
+	 * to the client and exists.
+	 */
 	private function jsonResponse($data, $code = 200, $statusText = "OK") {
 		header("HTTP/1.1 $code $statusText");
 		header("Content-Type: application/json");
@@ -298,6 +492,57 @@ class LoolEditor extends WireData implements Module {
 	public function uninstall() {
 		$this->tokenManager->removeTable();
 		$this->wopi->removeLocksTable();
-	}	
+	}
+	
+	public function update($from, $to) {
+		if(version_compare($from, "0.0.7", "<")) {
+			$this->wopi->addLockIdColumn();
+		}
+	}
+	
+	/**
+	 * Add LibreOffice Online editing options to all file input types
+	 *
+	 */
+	public function getConfigInputfields(HookEvent $event) {
+
+		$inputfields = $event->return;
+		$field = $event->arguments(0);
+		$fieldCls = $field->type->className();
+		
+		// Only enable LoolEditor on plain file fields, not image fields or others.
+		// See ___getCompatibleFields for a place to change that behaviour.
+		if($fieldCls !== "FieldtypeFile" && ! in_array($fieldCls, $this->getCompatibleFields())) return;
+		
+		$f = $this->modules->get("InputfieldCheckbox");
+		$f->label = $this->_("Enable LibreOffice Online Editing");
+		$f->attr('name', 'enableLool');
+		if($field->enableLool) $f->attr('checked', 'checked');
+		$f->description = $this->_("If checked, supported file types can be edited with LibreOffice Online.");
+		
+		$inputfields->append($f);
+		
+		$event->return = $inputfields;
+	}
+
+	/**
+	 * Convenience hook. Normally, LoolEditor can only be activated for
+	 * fields of type FieldtypeFile so that derived fields like FieldtypeImage
+	 * are excluded by default.
+	 *
+	 * If you have Fieldtypes that use InputfieldFile or a derived type where
+	 * inujecting the LoolEditor edit link works too, you can simply hook here
+	 * and add the class name (FieldtypeXXXWhatever) to the returned array.
+	 */
+	public function ___getCompatibleFields() {
+		return array();
+	}
+
+	/**
+	 * Allow configuring LibreOffice Online editing also in template context for fields
+	 */
+	public function getConfigAllowContext(HookEvent $event) {
+		$event->return = array_merge($event->return, ["enableLool"]);
+	}
 	
 }
