@@ -1,5 +1,13 @@
 <?php namespace ProcessWire;
 
+/**
+ * Handles creation, storage and retrieval of file tokens
+ * used to authorize the WOPI client (Collabora) for file
+ * access.
+ *
+ * Code by BitPoet
+ * Licensed under MPL 2.0
+ */
 class LoolToken extends WireData {
 
 	const dbTableName = "lool_tokens";
