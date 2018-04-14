@@ -31,13 +31,13 @@ Alpha
 ## ToDo
 - Pass the correct locale to the CODE leaflet
 - ~~Finish implementing file locking~~ [X] Done
-- Make the editor modal look nicer and fit the editor more tightly into the available space
+- ~~Make the editor modal look nicer and fit the editor more tightly into the available space~~ [X] Done
 - Add a little more error handling and reporting
 - Allow more customization
 - ~~Make editor use configurable on a per-field basis~~ [X] Done
 
 ## Screencap
-![Screen capture of LoolEditor](https://raw.githubusercontent.com/BitPoet/bitpoet.github.io/master/img/LoolEditor1.gif)
+![Screen capture of LoolEditor](https://raw.githubusercontent.com/BitPoet/bitpoet.github.io/master/img/LoolEditorScreenrecording2.gif)
 
 ## More on installing CODE
 
