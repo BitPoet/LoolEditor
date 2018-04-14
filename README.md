@@ -31,13 +31,27 @@ Alpha
 ## ToDo
 - Pass the correct locale to the CODE leaflet
 - ~~Finish implementing file locking~~ [X] Done
-- Make the editor modal look nicer and fit the editor more tightly into the available space
+- ~~Make the editor modal look nicer and fit the editor more tightly into the available space~~ [X] Done
 - Add a little more error handling and reporting
 - Allow more customization
 - ~~Make editor use configurable on a per-field basis~~ [X] Done
 
 ## Screencap
-![Screen capture of LoolEditor](https://raw.githubusercontent.com/BitPoet/bitpoet.github.io/master/img/LoolEditor1.gif)
+![Screen capture of LoolEditor](https://raw.githubusercontent.com/BitPoet/bitpoet.github.io/master/img/LoolEditorScreenrecording2.gif)
+
+## More on installing CODE
+
+### If the container doesn't start on Ubuntu 16.04
+
+I had a bit of trouble getting my Collabora CODE docker instance to run on Ubuntu 16.04. The container simply failed to spin up with a cryptic error message saying something about an invalid graphdriver. Despite how it sounds, this has nothing to do with graphics at all. The culprit apparently was that a disagreement about storage driver. I could fix this by adding a ```/etc/docker/daemon.js``` as described [here](https://docs.docker.com/storage/storagedriver/device-mapper-driver/).
+
+### Server behind NAT
+
+I'm using my local development machine behind a NAT, so the official server name resolves to a public IP. CODE whoever needs to communicate with ProcessWire on the internal IP, as my router (like most) doesn't allow looping connections.
+
+Thus, I had to tell the docker container to resolve the official hostname to the private 192.168.xxx.xxx IP instead of the public one. Fortunately, there's a command line argument for docker run that does just that. Use
+
+```docker run --add-host=your.public.hostname:192.168.xxx.xxx ...your other arguments...```
 
 ## License
 This module is released under MPL 2.0. See the LICENSE file in this repository for details.

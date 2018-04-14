@@ -1,5 +1,12 @@
 
 $(document).ready(function() {
 	$('#loleafletform_viewer').submit();
-	$('#loleafletframe_viewer').css('height', '90%');
+
+	window.addEventListener('message', function(evt) {
+		var data = JSON.parse(evt.data);
+		if(data["MessageId"] == "UI_Close") {
+			// Pass message on to parent iframe
+			window.parent.postMessage(evt.data, '*');
+		}
+	});
 });

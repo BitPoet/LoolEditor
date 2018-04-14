@@ -1,0 +1,22 @@
+
+iframe.pwLoolEditorPopup {
+	position:	absolute;
+	width:		90%;
+	min-height:	90%;
+	left:		5%;
+	top:		5%;
+	z-index:	1001;
+}
+
+
+div.pwLoolEditorOverlay {
+	position:	fixed;
+	opacity:	0.6;
+	background-color:	black;
+	
+	margin:		0;
+	left:		0;
+	top:		0;
+	right:		0;
+	bottom:		0;
+}
