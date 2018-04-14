@@ -20,7 +20,7 @@ class ProcessLoolEditor extends Process implements Module {
 		return array(
 			"title"			=>	"LibreOffice Online Editor",
 			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE",
-			"version"		=>	"0.0.8",
+			"version"		=>	"0.0.9",
 			"author"		=>	"BitPoet",
 			"installs"		=>	"LoolEditor",
 			"requires"		=>	"ProcessWire>=3.0",

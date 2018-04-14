@@ -12,7 +12,6 @@ class LoolWopi extends WireData {
 	const lockTableName = "lool_locks";
 	
 	public function parseRequest() {
-
 		$segments = $this->input->urlSegments();
 		
 		if(! count($segments)) {

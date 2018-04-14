@@ -25,7 +25,7 @@ class LoolEditor extends WireData implements Module {
 		return array(
 			"title"			=>	"Endpoint for LibreOffice Online Editor",
 			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE. Will be installed when you install ProcessLoolEditor.",
-			"version"		=>	"0.0.8",
+			"version"		=>	"0.0.9",
 			"author"		=>	"BitPoet",
 			"autoload"		=>	true,
 			"requires"		=>	"ProcessWire>=3.0",
@@ -48,6 +48,11 @@ class LoolEditor extends WireData implements Module {
 	 * Executed after InputfieldFile::renderItem
 	 */
 	public function addInputfieldFileEditLink(HookEvent $event) {
+		$moduleCSS = $this->config->urls->{$this->className()} . $this->className() . ".css";
+		$this->config->styles->add($moduleCSS . "?v=" . filemtime($this->config->paths->{$this->className()} . $this->className() . ".css"));
+		$moduleJS = $this->config->urls->{$this->className()} . $this->className() . ".js";
+		$this->config->scripts->add($moduleJS . "?v=" . filemtime($this->config->paths->{$this->className()} . $this->className() . ".js"));		
+
 		$inp = $event->object;
 		$pagefile = $event->arguments(0);
 		$id = $event->arguments(1);
@@ -63,9 +68,9 @@ class LoolEditor extends WireData implements Module {
 		if(! $this->hasFileMapping(strtolower(preg_replace('/^.*\./', '', $pagefile->name)))) return;
 		
 		$editPage = $this->pages->get($this->config->adminRootPageID)->child("name=lool, include=hidden");
-		$editUrl = $editPage->url . "?id=" . $ownerPage->id . "&field=" . $inp->name . "&filename=" . $pagefile->name;
+		$editUrl = $editPage->url . "?id=" . $ownerPage->id . "&field=" . $inp->name . "&filename=" . $pagefile->name . "&modal=1";
 		
-		$html = "<a class='InputfieldFileLoolEditLink pw-modal pw-modal-large' href='$editUrl' title='" . sprintf(_("Edit file %s%s"), $ownerPage->url, $pagefile->name) . "'> " .
+		$html = "<a class='InputfieldFileLoolEditLink pwLoolEditorLink' href='$editUrl' title='" . sprintf(_("Edit file %s%s"), $ownerPage->url, $pagefile->name) . "'> " .
 				"<span class='fa fa-pencil-square-o' title='" . $this->_("Edit file in Collabora CODE Editor") . "'> </span>" .
 				"</a>\n";
 		
@@ -100,6 +105,7 @@ class LoolEditor extends WireData implements Module {
 		$request = $this->wopi->parseRequest();
 		
 		if(isset($request["error"])) {
+			$this->log->error("LoolEditor::handleRequest error");
 			header("HTTP/1.1 400 " . $request["error"]);
 			exit;
 		}
@@ -457,11 +463,6 @@ class LoolEditor extends WireData implements Module {
 					"&title=" . urlencode($filename) .
 					"&lang=de" .
 					"&revisionhistory=1";
-		
-		$moduleCSS = $this->config->urls->{$this->className()} . $this->className() . ".css";
-		$this->config->styles->add($moduleCSS . "?v=" . filemtime($this->config->paths->{$this->className()} . $this->className() . ".css"));
-		$moduleJS = $this->config->urls->{$this->className()} . $this->className() . ".js";
-		$this->config->scripts->add($moduleJS . "?v=" . filemtime($this->config->paths->{$this->className()} . $this->className() . ".js"));
 		
 		$out =	'<iframe id="loleafletframe_viewer" name= "loleafletframe_viewer" style="width:100%;left:0;height:auto;position:absolute;"></iframe>' . "\n" .
 				"<form id='loleafletform_viewer' name='loleafletform_viewer' target='loleafletframe_viewer' action='$viewerUrl' method='POST'>\n" .
