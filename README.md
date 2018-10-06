@@ -29,12 +29,12 @@ Alpha
 - Your LibreOffice editor should open in a modal and you should be able to edit the file and save any changes
 
 ## ToDo
-- Pass the correct locale to the CODE leaflet
+- ~~Pass the correct locale to the CODE leaflet~~ [X] Done, language can now be set in PW's user profile
 - ~~Finish implementing file locking~~ [X] Done
 - ~~Make the editor modal look nicer and fit the editor more tightly into the available space~~ [X] Done
 - Add a little more error handling and reporting
 - Allow more customization
-- Add history support (WIP)
+- Add history support (WIP: versions are stored and can be listed so far)
 - ~~Make editor use configurable on a per-field basis~~ [X] Done
 
 ## Screencap
@@ -56,11 +56,18 @@ Thus, I had to tell the docker container to resolve the official hostname to the
 
 ## Changelog
 
+### 0.0.17
+
+ - Added dropdown to select the user interface language to the user template + profile
+ - Create versions when saving a document
+ - Display versions in a side bar when selected from the editor menu (File -> Version history)
+ 
 ### 0.0.10
 
  - Automatically install the WOPI endpoint when LoolEditor.module is installed and remove it when uninstalling
  - Make LOOL-URL configurable in LoolEditor module config to allow hosting it on another server (untested yet)
  - Fix issue with automatic LOOL URL determination when ProcessWire is installed in a subdirectory
+ - Allow the admin to select a different user field from "name" that will be shown as the display name in the editor
 
 ## License
 This module is released under MPL 2.0. See the LICENSE file in this repository for details.
