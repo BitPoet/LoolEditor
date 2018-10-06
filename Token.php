@@ -11,6 +11,7 @@
 class LoolToken extends WireData {
 
 	const dbTableName = "lool_tokens";
+	const dbTableVersionName = "lool_versions";
 	
 	public function getFileDataForToken($token) {
 
@@ -93,6 +94,63 @@ class LoolToken extends WireData {
 		$this->database->exec($sql);
 	}
 	
+	public function createVersionTable() {
+		$sql =	"CREATE TABLE IF NOT EXISTS " . self::dbTableVersionName . " ( " .
+				"id int not null auto_increment, " .
+				"fileid varchar(255), " .
+				"filename varchar(255), " .
+				"ts timestamp not null default current_timestamp, " .
+				"primary key(id), " .
+				"index(fileid) " .
+				") " .
+				" CHARACTER SET=" . $this->config->dbCharset .
+				" ENGINE=" . $this->config->dbEngine
+		;
+		
+		//$this->log->save('lool', $sql);
+		
+		$this->database->exec($sql);
+	}
+	
+	public function saveFileVersion($fid, $fname, $ts) {
+		$db = $this->database;
+		
+		$sql =	"INSERT INTO " . self::dbTableVersionName . " ( " .	"fileid, filename, ts) VALUES " .
+				"(" . $db->quote($fid) . ", " . $db->quote($fname) . ", FROM_UNIXTIME(" . $ts . ") )"
+		;
+		
+		//$this->log->save('lool', $sql);
+		
+		$db->exec($sql);
+	}
+	
+	public function readVersions($fid) {
+		$db = $this->database;
+	
+		$versions = [];
+		
+		$sql =	"SELECT CONCAT(fileid, '_', filename) as filename, UNIX_TIMESTAMP(ts) as ts, ts as modified FROM lool_versions WHERE fileid = " . $db->quote($fid) . " ORDER BY ts DESC";
+		
+		$result = $db->query($sql);
+		
+		if(! $result) {
+			return $versions;
+		}
+		
+		while($row = $result->fetch(\PDO::FETCH_ASSOC)) {
+			$versions[] = $row;
+		}
+		
+		return $versions;
+	}
+	
+	public function createVersionCache() {
+		$cacheDir = $this->config->paths->cache . ".loolversions";
+		if(! file_exists($cacheDir)) {
+			$this->files->mkdir($cacheDir, true);
+		}
+	}
+
 	public function removeTable() {
 		$sql = "DROP TABLE IF EXISTS " . self::dbTableName;
 		$this->database->exec($sql);

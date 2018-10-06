@@ -20,6 +20,8 @@
 		
 		$(document.body).append($popup);
 		
+		$("html, body").animate({ scrollTop: 0 }, "slow");
+		
 		return false;
 	}
 	
@@ -40,6 +42,9 @@ $(document).ready(function() {
 
 	window.addEventListener('message', function(evt) {
 		var data = JSON.parse(evt.data);
+		
+		//console.log("message event in LoolEditor.js");
+		//console.dir(evt);
 
 		if(data.MessageId == "UI_Close") {
 			$(this).loolEditor('close');

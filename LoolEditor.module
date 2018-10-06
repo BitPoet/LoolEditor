@@ -25,7 +25,7 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 		return array(
 			"title"			=>	"Endpoint for LibreOffice Online Editor",
 			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE. Will be installed when you install ProcessLoolEditor.",
-			"version"		=>	"0.0.10",
+			"version"		=>	"0.0.17",
 			"author"		=>	"BitPoet",
 			"autoload"		=>	true,
 			"requires"		=>	"ProcessWire>=3.0",
@@ -33,6 +33,7 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 	}
 	
 	public function __construct() {
+		$this->set("displayNameField", "name");
 		$this->tokenManager = new LoolToken();
 		$this->wopi = new LoolWopi();
 		$this->addHookAfter("InputfieldFile::renderItem", $this, "addInputfieldFileEditLink");
@@ -137,6 +138,9 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 			case "RefreshLock":
 				$this->tryRefreshLock($request);
 				break;
+			case "GetVersionsJSON":
+				$this->getVersions($request);
+				break;
 		}
 	}
 	
@@ -152,7 +156,7 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 
 		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
 
-		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
+		if(! $field->viewable($page, $user)) $this->jsonResponse(array(), 404, "Not Found");
 		
 		$editable = $field->editable($page, $user);
 		
@@ -263,7 +267,28 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 
 		return array($page, $field, $user);		
 	}
+
+	/**
+	 * Retrieve file version information. Honor PW's access checks
+	 */	
+	private function getVersions($request) {
+		$fid = $request["fileid"];
+		
+		$filedata = $this->getFileDataIfAuthorized($fid);
+
+		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
+
+		if(! $field->viewable($page, $user)) $this->jsonResponse(array(), 404, "Not Found");
+
+		$versions = $this->readVersions($fid);
+		
+		$this->jsonResponse($versions);
+	}
 	
+	
+	private function readVersions($fileid) {
+		return $this->tokenManager->readVersions($fileid);
+	}
 	
 	/**
 	 * Retrieve the file after applying PW's access checks
@@ -276,7 +301,7 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 
 		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
 
-		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
+		if(! $field->viewable($page, $user)) $this->jsonResponse(array(), 404, "Not Found");
 		
 		$editable = $field->editable($page, $user);
 		
@@ -302,7 +327,7 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 
 		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
 
-		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
+		if(! $field->viewable($page, $user)) $this->jsonResponse(array(), 404, "Not Found");
 		
 		$editable = $field->editable($page, $user);
 		
@@ -313,6 +338,25 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 		$path = $page->getUnformatted($filedata["fieldname"])->path();
 		$filename = $filedata["filename"];
 
+		//$this->log->save('lool', "Reading modification time from $path$filename");
+
+		$oldMtime = filemtime($path . $filename);
+		
+		//$this->log->save('lool', "Old mtime = $oldMtime");
+		
+		$cacheDir = $this->getCacheDir($page);
+		$versionFileName = $this->getUniqueVersionFileName($filename, $page);
+		
+		//$this->log->save('lool', "Copying version from $path$filename to $cacheDir$versionFileName");
+		
+		$this->files->copy($path . $filename, $cacheDir . $versionFileName);
+		
+		//$this->log->save('lool', "Saving version information to database");
+		
+		$this->tokenManager->saveFileVersion($fid, $versionFileName, $oldMtime);
+		
+		//$this->log->save('lool', "Overwriting page file contents");
+		
 		// Read file data from raw POST body and overwrite the original file with it		
 		$file = fopen($path . $filename, "w");
 		$inp  = fopen("php://input", "r");
@@ -325,6 +369,19 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 		$this->jsonResponse(array());
 	}
 	
+	
+	private function getCacheDir($page) {
+		//$this->log->save('lool', "getCacheDir($page)");
+		$dir = $this->config->paths->cache . ".loolversions/" . $page->id . "/";
+		//$this->log->save('lool', "Creating cache directory $dir");
+		$this->files->mkdir($dir, true);
+		return $dir;
+	}
+	
+	
+	private function getUniqueVersionFileName($filename, $page) {
+		return md5($filename . "_" . $page->id . "_" . microtime());
+	}
 	
 	/**
 	 * Retrieve basic file information after performing
@@ -341,12 +398,14 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 
 		list($page, $field, $user) = $this->getFileAssociatedObjects($filedata);
 
-		if(! $field->viewable($page, $user)) $this->jsonResopnse(array(), 404, "Not Found");
+		if(! $field->viewable($page, $user)) $this->jsonResponse(array(), 404, "Not Found");
 		
 		$editable = $field->editable($page, $user);
 		
 		$path = $page->getUnformatted($filedata["fieldname"])->path();
 		$filename = $filedata["filename"];
+		
+		$wopiPage = $this->pages->get("/wopi/");
 		
 		$ret = array(
 			"BaseFileName" => $filename,
@@ -358,10 +417,12 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 			"UserCanWrite" => $editable,
 			"UserCanNotWriteRelative" => true,
 			"SupportsLocks" => true,
-			"UserFriendlyName" => $user->name,
+			"UserFriendlyName" => $user->{$this->displayNameField},
 			"UserExtraInfo" => array(),
 			"LastModifiedTime" => date("c", filemtime($path . $filename)),
-			"CloseButtonClosesWindow" => true
+			"CloseButtonClosesWindow" => true,
+			"FileVersionPostMessage" => true,
+			"FileVersionUrl" => $wopiPage->httpUrl . "versions/?id=$fid"
 		);
 		
 		$this->jsonResponse($ret);
@@ -387,9 +448,9 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 				if(substr($url,-1) != '/') $url .= "/";
 			} else {
 				$url = $this->pages->get('/')->httpUrl;
-				$this->log->save('lool', "URL before truncation: $url");
+				//$this->log->save('lool', "URL before truncation: $url");
 				$url = preg_replace('~^(https?://[^/]+/).*~i', '$1', $url);
-				$this->log->save('lool', "URL after truncation: $url");
+				//$this->log->save('lool', "URL after truncation: $url");
 			}
 				
 			$url .= "hosting/discovery";
@@ -467,18 +528,30 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 		$urlsrc = $this->getUrlSrc($extension);
 		
 		$WOPISrc = $wopiPage->httpUrl . "files/" . $filedata["fileid"];
+		$versionURL = $wopiPage->httpUrl . "versions/" . $filedata["fileid"] . "/";
 		
 		$viewerUrl = $urlsrc .
 					"WOPISrc=" . $WOPISrc .
 					"&closebutton=1" .
 					"&title=" . urlencode($filename) .
-					"&lang=de" .
+					"&lang=" . ($this->user->looleditorlanguage ? $this->user->looleditorlanguage->value : "en") .
 					"&revisionhistory=1";
+		
+		$config = [
+			"historyUrl"	=>	$versionURL,
+			"token"			=>	$token,
+			"labels"		=>	[
+				"versions"		=>	_("Versions"),
+				"latest"		=>	_("Latest version"),
+				"closeHistory"	=>	_("Close history")
+			]
+		];
 		
 		$out =	'<iframe id="loleafletframe_viewer" name= "loleafletframe_viewer" style="width:100%;left:0;height:auto;position:absolute;"></iframe>' . "\n" .
 				"<form id='loleafletform_viewer' name='loleafletform_viewer' target='loleafletframe_viewer' action='$viewerUrl' method='POST'>\n" .
 				'<input name="access_token" value="' . $token . '" type="hidden"/>' . "\n" .
-				'</form>' . "\n";
+				'</form>' . "\n" .
+				"<script>ProcessWire.config.looleditor = " . json_encode($config) . ";</script>" . "\n";
 		
 		return $out;
 	}
@@ -498,20 +571,95 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 	
 	public function install() {
 		$this->tokenManager->createTable();
+		$this->tokenManager->createVersionTable();
+		$this->tokenManager->createVersionCache();
 		$this->wopi->createLocksTable();
 		$this->wopi->installWOPIEndpoint();
+		$this->addLanguageField();
 	}	
 	
 	public function uninstall() {
 		$this->tokenManager->removeTable();
 		$this->wopi->removeLocksTable();
 		$this->wopi->removeWOPIEndpoint();
+		$this->removeLanguageField();
 	}
 	
-	public function update($from, $to) {
+	public function ___upgrade($from, $to) {
+		//$this->log->save("Upgrading from version $from to $to");
+		if(version_compare($from, "0.0.16", "<")) {
+			$this->addLanguageField();
+		}
 		if(version_compare($from, "0.0.7", "<")) {
 			$this->wopi->addLockIdColumn();
 		}
+		if(version_compare($from, "0.0.13", "<")) {
+			$this->tokenManager->createVersionTable();
+			$this->tokenManager->createVersionCache();
+		}
+	}
+	
+	/**
+	 * Add a select field with GUI languages for LoolEditor
+	 * to the user template and makes it editable for the
+	 * user themselves through ProcessProfile.
+	 */
+	public function addLanguageField() {
+		//$this->log->save('lool', "Adding language field for user profile");
+		$f = $this->fields->get('looleditorlanguage');
+		if(! $f) {
+			//$this->log->save('lool', "Field not found");
+			$f = new Field();
+			$f->type = $this->modules->get('FieldtypeOptions');
+			$f->name = 'looleditorlanguage';
+			$f->label = "Language for LoolEditor";
+			$f->description = "Language for the editor GUI in the LibreOffice Online inline editor";
+			$f->save();
+			
+			//$this->log->save('lool', "Setting options from " . $this->config->paths->LoolEditor . "languages.txt");
+			
+			$optMgr = new SelectableOptionManager();
+			$opts = file_get_contents($this->config->paths->LoolEditor . "languages.txt");
+			$optMgr->setOptionsString($f, $opts, false);
+			
+			$f->addFlag(Field::flagSystem);
+			$f->save();
+		}
+		
+		//$this->log->save('lool', "Checking user template");
+		$t = $this->templates->get("user");
+		$fg = $t->fieldgroup;
+		if(! $fg->hasField("looleditorlanguage")) {
+			//$this->log->save('lool', "Need to add field to template");
+			$fg->add($f);
+			$fg->save();
+		}
+		
+		//$this->log->save('lool', "Checking profile settings");
+		
+		$modcfg = $this->modules->getModuleConfigData("ProcessProfile");
+		if(! in_array($modcfg["profileFields"], "looleditorlanguage")) {
+			//$this->log->save('lool', "Adding field to allowed profile fields");
+			$modcfg["profileFields"][] = "looleditorlanguage";
+			$this->modules->saveModuleConfigData("ProcessProfile", $modcfg);
+		}
+		//$this->log->save('lool', "Finished with addLanguageField");
+	}
+	
+	public function removeLanguageField() {
+		$f = $this->fields->get('looleditorlanguage');
+		if(! $f) return;
+		
+		$t = $this->templates->get("user");
+		$fg = $t->fieldgroup;
+		if(! $fg->hasField("looleditorlanguage")) return;
+		
+		$f->addFlag(Field::flagSystemOverride);
+		
+		$fg->remove($f);
+		$fg->save();
+		
+		$this->fields->delete($f);
 	}
 	
 	/**
@@ -561,6 +709,29 @@ class LoolEditor extends WireData implements Module, ConfigurableModule {
 
 	public function ___getModuleConfigInputfields($data) {
 		$inputfields = new InputfieldWrapper();
+		
+		$f = wire('modules')->get('InputfieldSelect');
+		$f->attr('name', 'displayNameField');
+		$t = wire('templates')->get("user");
+		//wire('log')->save('lool', "Template {$t->name} with fieldgroup {$t->fieldgroup->id}: " . print_r($t, true));
+		$tfields = $t->fieldgroup;
+		//wire('log')->save('lool', "Fieldgroup {$tfields->id}: " . print_r($tfields, true));
+		foreach($tfields as $tf) {
+			//wire('log')->save('lool', "Field {$tf->name}");
+			if(! $tf->type instanceof FieldtypeText) continue;
+			if($tf->name == 'pass') continue;
+			$f->addOption($tf->name, $tf->label ?: $tf->name);
+			//wire('log')->save('lool', "Field {$tf->name} added");
+		}
+		$f->addOption("name");
+		$f->label = "Display Name Field for Users";
+		$f->description = _("Use this field instead of the login name when showing users and their edits in the editor");
+		$f->notes = _("Only text based fields can be used here");
+		if(isset($data["displayNameField"]))
+			$f->attr('value', $data["displayNameField"]);
+		else
+			$f->attr('value', "name");
+		$inputfields->add($f);
 
 		$f = wire('modules')->get('InputfieldText');
 		$f->attr('name', 'wopiPrefix');

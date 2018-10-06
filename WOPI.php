@@ -103,6 +103,9 @@ class LoolWopi extends WireData {
 			// ecosystem endoints
 			$ret = array("endpoint" => "ecosystem", "action" => "NotImplemented");
 			return $ret;
+		} else if($segments[1] == "versions") {
+			$ret = array("endpoint" => "versions", "action" => "GetVersionsJSON", "fileid" => $segments[2]);
+			return $ret;
 		}
 	
 		return array("error" => "Unknown endpoint");
@@ -245,7 +248,7 @@ class LoolWopi extends WireData {
 				$this->session->message(_("WOPI endpoint already present"));
 		}
 	}
-
+	
 	public function removeWOPIEndpoint() {
 		$p = $this->pages->get('/wopi/');
 		if(! $p instanceOf NullPage) {

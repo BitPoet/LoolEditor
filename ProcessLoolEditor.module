@@ -20,7 +20,7 @@ class ProcessLoolEditor extends Process implements Module {
 		return array(
 			"title"			=>	"LibreOffice Online Editor",
 			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE",
-			"version"		=>	"0.0.9",
+			"version"		=>	"0.0.10",
 			"author"		=>	"BitPoet",
 			"installs"		=>	"LoolEditor",
 			"requires"		=>	"ProcessWire>=3.0",
@@ -40,6 +40,7 @@ class ProcessLoolEditor extends Process implements Module {
 		if($this->page->process == "ProcessPageEdit") {
 			$this->config->scripts->add($this->config->urls->{$this->className()} . $this->className() . ".js");
 		}
+		$this->config->js('looleditor', ["dummy" => 1]);
 		parent::init();
 	}
 	
