@@ -15,7 +15,7 @@ require(__DIR__ . "/Token.php");
  * Licensed under MPL 2.0
  */
 
-class LoolEditor extends WireData implements Module {
+class LoolEditor extends WireData implements Module, ConfigurableModule {
 	
 	protected $tokenManager;
 	protected $wopi;
@@ -25,7 +25,7 @@ class LoolEditor extends WireData implements Module {
 		return array(
 			"title"			=>	"Endpoint for LibreOffice Online Editor",
 			"summary"		=>	"Allow editing page files with LibreOffice Online / Collabora CODE. Will be installed when you install ProcessLoolEditor.",
-			"version"		=>	"0.0.9",
+			"version"		=>	"0.0.10",
 			"author"		=>	"BitPoet",
 			"autoload"		=>	true,
 			"requires"		=>	"ProcessWire>=3.0",
@@ -381,7 +381,18 @@ class LoolEditor extends WireData implements Module {
 		if(! file_exists($discovery) || filemtime($discovery) < time() - 86400) {
 			// Fetch discovery.xml file and renew every 24 hours
 			$http = new WireHttp();
-			$url = $this->pages->get('/')->httpUrl . "hosting/discovery";
+
+			if($this->wopiPrefix) {
+				$url = $this->wopiPrefix;
+				if(substr($url,-1) != '/') $url .= "/";
+			} else {
+				$url = $this->pages->get('/')->httpUrl;
+				$this->log->save('lool', "URL before truncation: $url");
+				$url = preg_replace('~^(https?://[^/]+/).*~i', '$1', $url);
+				$this->log->save('lool', "URL after truncation: $url");
+			}
+				
+			$url .= "hosting/discovery";
 			$xml = $http->get($url);
 			
 			if($xml === false) {
@@ -488,11 +499,13 @@ class LoolEditor extends WireData implements Module {
 	public function install() {
 		$this->tokenManager->createTable();
 		$this->wopi->createLocksTable();
+		$this->wopi->installWOPIEndpoint();
 	}	
 	
 	public function uninstall() {
 		$this->tokenManager->removeTable();
 		$this->wopi->removeLocksTable();
+		$this->wopi->removeWOPIEndpoint();
 	}
 	
 	public function update($from, $to) {
@@ -545,5 +558,19 @@ class LoolEditor extends WireData implements Module {
 	public function getConfigAllowContext(HookEvent $event) {
 		$event->return = array_merge($event->return, ["enableLool"]);
 	}
-	
+
+	public function ___getModuleConfigInputfields($data) {
+		$inputfields = new InputfieldWrapper();
+
+		$f = wire('modules')->get('InputfieldText');
+		$f->attr('name', 'wopiPrefix');
+		$f->label = _('Collabora URL prefix');
+		if(isset($data["wopiPrefix"])) $f->attr('value', $data["wopiPrefix"]);
+		$f->description = _("Leave this empty if your Collabora CODE installation is on the same host and forwarded from the root path (default).");
+		$f->notes = _("If CODE is hosted on another server, insert its base URL here. This will usually be something like https://collabora.server.name[:port-if-nonstandard]/");
+		$inputfields->add($f);
+
+		return $inputfields;
+	}
+
 }

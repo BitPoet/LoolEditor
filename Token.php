@@ -83,7 +83,7 @@ class LoolToken extends WireData {
 				" fileid varchar(255), " .
 				" token varchar(100), " .
 				" primary key (pages_id, filename), " .
-				" unique index (fileid), " .
+				" unique key (fileid), " .
 				" index (token) " .
 				") " .
 				" CHARACTER SET=" . $this->config->dbCharset .

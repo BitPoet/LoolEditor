@@ -169,7 +169,8 @@ class LoolWopi extends WireData {
 				" lock_user_id int, " .
 				" lock_create_time timestamp default current_timestamp, " .
 				" lock_update_time timestamp default 0, " .
-				" primary key(fileid) " .
+				" primary key(id), " .
+				" unique key(fileid) " .
 				") " .
 				" CHARACTER SET=" . $this->config->dbCharset .
 				" ENGINE=" . $this->config->dbEngine
@@ -186,4 +187,84 @@ class LoolWopi extends WireData {
 		$sql = "ALTER TABLE " . self::lockTableName . " ADD COLUMN id int unsigned not null auto_increment FIRST, ADD KEY(id)";
 		$this->database->exec($sql);
 	}
+
+	public function installWOPIEndpoint() {
+		if(file_exists($this->config->paths->templates . "wopi.php")) {
+			$this->session->warning(_("wopi.php template file already exists. You need to manually copy wopi-template.php from the module directory to site/templates/wopi.php"));
+		} else {
+			$srcFile = $this->config->paths->LoolEditor . "wopi-template.php";
+			$dstFile = $this->config->paths->templates . "wopi.php";
+			if($this->config->debug)
+				$this->session->message(sprintf(_("Copying template file from %s to %s"), $srcFile, $dstFile));
+
+			$this->files->copy($srcFile, $dstFile);
+
+			$this->session->message(_("Installed wopi.php template to site/templates"));
+		}
+
+		$fg = $this->fieldgroups->get('wopi');
+		if(! $fg) {
+			$fg = new Fieldgroup();
+			$fg->name = 'wopi';
+			$f = $this->fields->get('title');
+			$fg->add($f);
+			$fg->save();
+			if($this->config->debug) $this->session->message(_("Installed fieldgroup for template wopi"));
+		} else {
+			if($this->config->debug) $this->session->message(_("Fieldgroup for template wopi already present"));
+		}
+
+		$t = $this->templates->get("wopi");
+		if(! $t) {
+			$t = new Template();
+			$t->fieldgroup = $fg;
+			$t->name = "wopi";
+			$t->tags = "LOOL";
+			$t->urlSegments = 1;
+			$t->save();
+			$this->session->message(_("Installed template wopi"));
+		} else {
+			if($this->config->debug)
+				$this->session->message(_("Template 'wopi' already present"));
+		}
+
+		$p = $this->pages->get("/wopi/");
+		if($p instanceOf NullPage) {
+			$p = new Page();
+			$p->template = $t;
+			$p->parent = $this->pages->get('/');
+			$p->name = "wopi";
+			$p->title = "WOPI";
+			$p->removeStatus(Page::statusUnpublished);
+			$p->addStatus(Page::statusHidden);
+			$p->addStatus(Page::statusLocked);
+			$p->save();
+			$this->session->message(_("Installed WOPI endpoint page /wopi/"));
+		} else {
+			if($this->config->debug)
+				$this->session->message(_("WOPI endpoint already present"));
+		}
+	}
+
+	public function removeWOPIEndpoint() {
+		$p = $this->pages->get('/wopi/');
+		if(! $p instanceOf NullPage) {
+			$p->of(false);
+			$p->removeStatus(Page::statusLocked);
+			$p->delete();
+			$this->session->message(_("Removed WOPI endpoint page"));
+		}
+
+		$t = $this->templates->get('wopi');
+		if($t) {
+			$this->templates->delete($t);
+			$this->session->message(_("Removed wopi template. Delete site/templates/wopi.php manually"));
+		}
+
+		$fg = $this->fieldgroups->get('wopi');
+		if($fg) {
+			$this->fieldgroups->delete($fg);
+		}
+	}
+
 }
